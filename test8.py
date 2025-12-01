@@ -454,13 +454,25 @@ if __name__ == "__main__":
                 for iter in range(50):
                     Q_old, P_old, k1_old = Q, P, k1
 
+                    # ---- Update P ----
                     b4_val = b4(ts, Q, P, n, params["hv"], params["tT"], k1, params)
-
                     P = giai_nghiem_daohamTc_theoP(b4_val, params)
+                    P = max(Pmin, min(P, Pmax))
 
+                    # ---- Update Q ----
                     Q = giai_nghiem_daohamTc_theoQ(Q, P, n, Av, theta, ts, tT, k1, CR, params)
+                    Q = max(Q, 1e-6)
 
+                    # ---- Update k1 ----
                     k1 = giai_nghiem_daohamTc_theoK1(k1, Q, P, n, ts, params["tT"], params)
+                    k1 = max(k1, 1e-6)
+
+                    
+
+
+                    print(f"sau khi gọi các hàm giải nghiệm ")
+                    print(f"Q = {Q}, b4_value = {b4_val},P = {P}, k1 = {k1}")
+                    print(f"Av = {Av}, theta = {theta}")
 
                     # 3. Update Av, Theta
                     # 🛑 LOGIC SỬA LỖI: CHỈ TÍNH LẠI NẾU CHƯA BỊ KHÓA
@@ -473,7 +485,11 @@ if __name__ == "__main__":
                         # Để theta tự do tìm nghiệm
 
                     # Check hội tụ
-                    if max(abs(Q - Q_old) / Q, abs(P - P_old) / P) < 1e-5:
+                    if max(
+                            abs(Q - Q_old) / max(Q, 1e-8),
+                            abs(P - P_old) / max(P, 1e-8),
+                            abs(k1 - k1_old) / max(k1, 1e-8),
+                    ) < 1e-5:
                         break
                 # ==========================
                 # STEP 3: Check Constraints & Decide
@@ -488,15 +504,24 @@ if __name__ == "__main__":
                     fix_Av = True
                     violation_found = True
                     print(f"    ⚠ Av violated limit. Locking Av = {Av:.2f} and returning to Step 2.")
+                    continue
 
                 # Check Theta
                 if theta > params["theta0"] and not fix_theta:
-                    # Vi phạm -> Set về biên và KHÓA LẠI
+                # Vi phạm -> Set về biên và KHÓA LẠI
                     print(f" Debug theta: " ,theta)
                     theta = params["theta0"]
                     fix_theta = True
                     violation_found = True
                     print(f"    ⚠ Theta violated limit. Locking Theta = {theta:.6f} and returning to Step 2.")
+                    continue
+                # ---------- Check Theta LOWER ----------
+                if theta < 0.0 and not fix_theta:
+                    print(" Debug theta:", theta)
+                    theta = 0.0
+                    fix_theta = True
+                    violation_found = True
+                    print(f"    ⚠ Theta violated LOWER limit. Locking Theta = 0 and returning to Step 2.")
 
                 # Decision
                 if violation_found:
