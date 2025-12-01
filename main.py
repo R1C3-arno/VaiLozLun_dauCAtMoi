@@ -455,13 +455,13 @@ if __name__ == "__main__":
     Q = 200.0
 
     # số lặp tối đa
-    Max_interation = 1000000
+    Max_interation = 10
 
     ## khởi tạo TC min ban đầu cho mỗi n = dương vô cực
     TC_min_prev = float("inf")
 
     ## vòng lặp While (lặp cho đến khi tự dừng bằng điều kiện Tc(n) bắt đầu tăng trở lại
-    while n<=Max_interation:
+    while n<=10:
 
         TC_min_n = float("inf")
 
@@ -483,7 +483,7 @@ if __name__ == "__main__":
 
             # ===== STEP 4: GIẢI LẶP HỘI TỤ Q, P, k1, Av, theta =====
 
-            for _ in range(Max_interation):
+            for _ in range(10):
 
                 Q_old, P_old, k1_old = Q, P, k1
 

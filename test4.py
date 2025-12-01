@@ -45,7 +45,7 @@ def compute_ts(a, b):
         ts_j = sum_a - sum_b
 
         ## check miền b<ts<a
-        if ts_min - 1e-9 <= ts_j <= ts_max + 1e-9:
+        if ts_min <= ts_j <= ts_max:
             ts_list.append(ts_j)
         else:
             print(f"⚠️ Bỏ ts_j={ts_j} (ngoài [{ts_min}, {ts_max}])")
@@ -75,6 +75,7 @@ def compute_CR(ts_list, a, b, C):
         for i in range(1, last_i):  # i from 1 to j+1
             idx = i - 1  # python index
             term2 += C[idx] * (a[idx] - b[idx])
+
         CR.append(term1 + term2)
 
     return CR
@@ -224,10 +225,10 @@ def b1(D, n, A0, CT, pi, sigma, ts, Q, P, tT, k1, CR, Av):
 
 def b2(D, pi, sigma, ts, Q, P, tT, k1, n):
     ts_safe = ts + Q / P
-    ts_safe = max(ts_safe, 1e-8)
+    ts_safe = max(ts + Q / P, 1e-8)
 
     tT_safe = tT + k1 ** 2 * ts_safe
-    tT_safe = max(tT_safe, 1e-8)
+    tT_safe = max(tT + k1 ** 2 * ts_safe, 1e-8)
 
     term1 = (math.sqrt(1 + k1 ** 2) - k1) / math.sqrt(ts_safe)
 
@@ -398,7 +399,6 @@ def giai_nghiem_daohamTc_theoTheta(Q, n, params):
     return 2 * B1 / (rho * n * D * Q)
 
 
-print("\nMain --Test")
 if __name__ == "__main__":
 
     print("\n========== PARAMS ==========")
@@ -418,12 +418,12 @@ if __name__ == "__main__":
     theta0 = params["theta0"]
     tT = params["tT"]
 
-    # Sort theo crashing cost
+    # Sort theo crashing cost (QUAN TRỌNG)
     zip_all = sorted(zip(a, b, C), key=lambda x: x[2])
-    a, b, C = map(list, zip(*zip_all))
+    a_sorted, b_sorted, C_sorted = map(list, zip(*zip_all))
 
-    ts_list = compute_ts(a, b)
-    CR_list = compute_CR(ts_list, a, b, C)
+    ts_list = compute_ts(a_sorted, b_sorted)
+    CR_list = compute_CR(ts_list, a_sorted, b_sorted, C_sorted)
     m = len(ts_list)
 
     print("=" * 80)
@@ -471,171 +471,80 @@ if __name__ == "__main__":
             Av = Av0
             theta = theta0
 
-            print(f"\nSTEP 2a - Initialize:")
-            print(f"  Q = {Q}, P = {P}, k1 = {k1}")
-            print(f"  Av = {Av}, theta = {theta}")
+            # =========================
+            # STEP 2b-2e: Iterative loop until convergence
+            # =========================
+            MAX_ITER = 50
+            tolerance = 1e-6
 
-            # ═════════════════════════════════════════════════
-            # 🔁 OUTER LOOP FOR STEP 3 CONSTRAINT RE-ITERATION
-            # ═════════════════════════════════════════════════
-            MAX_CONSTRAINT_ITER = 50
-            constraint_satisfied = False
+            for iteration in range(MAX_ITER):
+                Q_prev, P_prev, k1_prev, Av_prev, theta_prev = Q, P, k1, Av, theta
 
-            for constraint_iter in range(MAX_CONSTRAINT_ITER):
+                # ─────────────────────────────────────
+                # STEP 2b: Find P and Q
+                # ─────────────────────────────────────
+                beta4_val = b4(ts, Q, P, n, params["hv"], tT, k1, params)
+                P = giai_nghiem_daohamTc_theoP(beta4_val, params)
 
-                if constraint_iter > 0:
-                    print(f"\n  🔄 Re-running Step 2 with adjusted constraints (iter {constraint_iter})")
+                # Clamp P
+                if P <= Pmin: P = Pmin
+                if P >= Pmax: P = Pmax
 
-                # =========================
-                # STEP 2b-2e: Iterative loop until convergence
-                # =========================
-                MAX_ITER = 50
-                tolerance = 1e-6
+                Q = giai_nghiem_daohamTc_theoQ(Q, P, n, Av, theta, ts, tT, k1, CR, params)
 
-                for iteration in range(MAX_ITER):
-                    Q_prev = Q
-                    P_prev = P
-                    k1_prev = k1
-                    Av_prev = Av
-                    theta_prev = theta
+                # ─────────────────────────────────────
+                # STEP 2c: Calculate k1
+                # ─────────────────────────────────────
+                k1 = giai_nghiem_daohamTc_theoK1(Q, P, n, ts, tT, k1, params)
+                k1 = max(0.1, min(k1, 100.0))
 
-                    # ─────────────────────────────────────
-                    # STEP 2b: Find Pi from Eq.(11) and Qi from Eq.(10)
-                    # ─────────────────────────────────────
-                    beta4_val = b4(ts, Q, P, n, params["hv"], tT, k1, params)
-                    P = giai_nghiem_daohamTc_theoP(beta4_val, params)
+                # ─────────────────────────────────────
+                # STEP 2d: Obtain Av2, θ2 AND APPLY CONSTRAINTS
+                # ─────────────────────────────────────
+                Av_calc = giai_nghiem_daohamTc_theoAv(Q, n, params)
+                theta_calc = giai_nghiem_daohamTc_theoTheta(Q, n, params)
 
-                    # ✅ ENFORCE P > Pmin (strict inequality)
-                    if P <= Pmin:
-                        P = Pmin + 1e-6
-                    P = min(P, Pmax)
+                # ✅ FIX CHÍNH: Ép ràng buộc ngay tại đây thay vì dùng Step 3 bên ngoài
+                # Nếu giá trị tối ưu lý thuyết (calc) lớn hơn giá trị ban đầu (0)
+                # Nghĩa là ta không nên đầu tư, giữ nguyên giá trị ban đầu.
+                Av = min(Av_calc, Av0)
+                theta = min(theta_calc, theta0)
+                theta = max(theta0, min(theta_calc, 1.0))
 
-                    Q = giai_nghiem_daohamTc_theoQ(Q, P, n, Av, theta, ts, tT, k1, CR, params)
+                # Đảm bảo không âm (phòng hờ)
+                Av = max(1e-12, Av)
+                theta = max(1e-12, theta)
 
-                    # ─────────────────────────────────────
-                    # STEP 2c: Calculate k1 from Eq.(12)
-                    # ─────────────────────────────────────
-                    k1 = giai_nghiem_daohamTc_theoK1(Q, P, n, ts, tT, k1, params)
+                # ─────────────────────────────────────
+                # STEP 2e: Check convergence
+                # ─────────────────────────────────────
+                converged = (
+                        abs(Q - Q_prev) < tolerance and
+                        abs(P - P_prev) < tolerance and
+                        abs(k1 - k1_prev) < tolerance and
+                        abs(Av - Av_prev) < tolerance and
+                        abs(theta - theta_prev) < tolerance
+                )
 
-                    # ✅ CLAMP k1 to reasonable range
-                    k1 = max(0.1, min(k1, 100.0))
+                if converged:
+                    break
 
-                    # ─────────────────────────────────────
-                    # STEP 2d: Obtain Av2, θ2
-                    # ─────────────────────────────────────
-                    Av_calc = giai_nghiem_daohamTc_theoAv(Q, n, params)
-                    theta_calc = giai_nghiem_daohamTc_theoTheta(Q, n, params)
-
-                    theta_calc = max(0.0, min(theta_calc, 1.0))  # đảm bảo 0 <= theta <= 1
-                    Av_calc = max(1e-12, Av_calc)  # tránh log(Av0/Av) lỗi nếu Av=0
-
-                    # DON'T apply constraints here - let Step 3 handle it
-                    Av = Av_calc
-                    theta = theta_calc
-
-                    # ─────────────────────────────────────
-                    # STEP 2e: Check convergence
-                    # ─────────────────────────────────────
-                    converged = (
-                            abs(Q - Q_prev) < tolerance and
-                            abs(P - P_prev) < tolerance and
-                            abs(k1 - k1_prev) < tolerance and
-                            abs(Av - Av_prev) < tolerance and
-                            abs(theta - theta_prev) < tolerance
-                    )
-
-                    if converged:
-                        print(f"\n  ✓ Converged at iteration {iteration + 1}")
-                        print(f"    Q = {Q:.2f}, P = {P:.2f}, k1 = {k1:.4f}")
-                        print(f"    Av = {Av:.4f}, theta = {theta:.8f}")
-                        break
-
-                if iteration == MAX_ITER - 1:
-                    print(f"  ⚠ Max iterations reached without convergence")
-
-                # =========================
-                # STEP 3: Check constraints
-                # =========================
-                print(f"\nSTEP 3 - Check constraints (constraint_iter={constraint_iter}):")
-                print(f"  Av = {Av:.4f} vs Av0 = {Av0:.4f}")
-                print(f"  theta = {theta:.8f} vs theta0 = {theta0:.8f}")
-
-                # ✅ STEP 3: IMPLEMENT CORRECT CONSTRAINT LOGIC
-
-                # STEP 3a: Both constraints satisfied → Go to Step 4
-                if Av <= Av0 and theta <= theta0:
-                    print(f"  ✓ All constraints satisfied → Go to Step 4")
-                    constraint_satisfied = True
-                    break  # Exit constraint loop, go to Step 4
-
-                # STEP 3b: Av violated, theta OK → Set Av = Av0, GO BACK TO STEP 2
-                elif Av > Av0 and theta <= theta0:
-                    print(f"  ⚠ Av violated → Set Av = Av0, utilize Eq.(4), GO BACK TO STEP 2")
-                    Av = Av0
-
-                    Q = 200.0
-                    P = 900.0
-                    k1 = 4.0
-                    theta = theta0
-
-                    # Continue constraint_iter loop → will re-run Step 2b-2e with Av = Av0
-                    continue
-
-                # STEP 3c: theta violated, Av OK → Set theta = theta0, GO BACK TO STEP 2
-                elif Av <= Av0 and theta > theta0:
-                    print(f"  ⚠ theta violated → Set theta = theta0, utilize Eq.(4), GO BACK TO STEP 2")
-                    theta = theta0
-
-                    Q = 200.0
-                    P = 900.0
-                    k1 = 4.0
-                    Av = Av0
-                    # Continue constraint_iter loop → will re-run Step 2b-2e with theta = theta0
-                    continue
-
-                # STEP 3d: Both violated → Set both, GO BACK TO STEP 2
-                else:  # Av > Av0 and theta > theta0
-                    print(f"  ⚠ Both violated → Set Av = Av0, theta = theta0, utilize Eq.(4), GO BACK TO STEP 2")
-                    Av = Av0
-                    theta = theta0
-
-                    Q = 200.0
-                    P = 900.0
-                    k1 = 4.0
-                    # Continue constraint_iter loop → will re-run Step 2b-2e with both adjusted
-                    continue
-
-            # End of constraint_iter loop
-
-            # If we exited constraint loop without satisfying constraints
-            if not constraint_satisfied:
-                print(
-                    f"  ❌ STEP 3 failed to find feasible solution after {MAX_CONSTRAINT_ITER} iterations → DISCARD THIS j")
-                continue  # Skip to next j
+            # End of Iteration Loop
 
             # =========================
             # STEP 4: Find TC and Min over j
             # =========================
             TC_current = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, tT, CR)
 
-            print(f"\nSTEP 4 - Compute TC:")
-            print(f"  TC(n={n}, j={j}) = ${TC_current:.2f}")
+            print(f"  Converged at iter {iteration + 1}. TC=${TC_current:.2f}")
+            print(f"  State: Q={Q:.1f}, P={P:.1f}, Av={Av:.4f}, Theta={theta:.8f}")
 
             if TC_current < TC_best_for_n:
                 TC_best_for_n = TC_current
                 solution_best_for_n = {
-                    'n': n,
-                    'j': j,
-                    'Q': Q,
-                    'P': P,
-                    'k1': k1,
-                    'Av': Av,
-                    'theta': theta,
-                    'ts': ts,
-                    'CR': CR,
-                    'TC': TC_current
+                    'n': n, 'j': j, 'Q': Q, 'P': P, 'k1': k1,
+                    'Av': Av, 'theta': theta, 'ts': ts, 'CR': CR, 'TC': TC_current
                 }
-                print(f"  ✓ New best TC for n={n}: ${TC_current:.2f}")
 
         # End of loop over j
 
@@ -647,22 +556,17 @@ if __name__ == "__main__":
         print(f"  TC_best(n={n}) = ${TC_best_for_n:.2f}")
         print(f"  TC_best(n={n - 1}) = ${TC_prev_n:.2f}")
 
+        # So sánh với n ngay trước đó (Logic đúng của Paper)
         if TC_best_for_n < TC_prev_n:
-            print(f"  ✓ TC improved ({TC_best_for_n:.2f} < {TC_prev_n:.2f}). Continue to n={n + 1}")
-
-            # ✅ UPDATE TC(n-1) for next iteration
+            print(f"  ✓ TC improved. Continue to n={n + 1}")
             TC_prev_n = TC_best_for_n
             best_solution_overall = solution_best_for_n
-
             if TC_best_for_n < best_TC_overall:
                 best_TC_overall = TC_best_for_n
-
             n += 1
         else:
-            print(f"  ✗ TC increased ({TC_best_for_n:.2f} >= {TC_prev_n:.2f}). Stop at n={n - 1}")
+            print(f"  ✗ TC increased. Stop optimization.")
             break
-
-    # End of while n loop
 
     # =========================
     # STEP 6: Final optimal solution
@@ -681,41 +585,6 @@ if __name__ == "__main__":
         print(f"  Safety factor (k1*):            {sol['k1']:.4f}")
         print(f"  Setup cost (Av*):               ${sol['Av']:.4f}/setup")
         print(f"  Defective probability (θ*):     {sol['theta']:.8f}")
-        print(f"  Setup time (ts*):               {sol['ts']:.4f}")
-        print(f"  Crashing cost (CR*):            ${sol['CR']:.4f}")
-        print(f"\n  Expected Total Cost (ETC*):     ${sol['TC']:.2f}")
-
-        # Calculate k2
-        L1 = sol['ts'] + sol['Q'] / sol['P']
-        k2_calculated = sol['k1'] * math.sqrt(L1 / tT)
-
-        print(f"\n  Lead time batch 1 (L1):         {L1:.4f}")
-        print(f"  Transportation time (tT):       {tT:.4f}")
-        print(f"  Safety factor batch 2-m (k2*):  {k2_calculated:.4f}")
-        print(f"  Relation: k2 = k1*sqrt(L1/tT) = {sol['k1']:.4f}*sqrt({L1:.4f}/{tT:.4f}) = {k2_calculated:.4f}")
-
-        # Verify assumption 5: tT = α*ts
-        alpha_calculated = tT / sol['ts']
-        print(f"\n  Verification: α = tT/ts = {tT:.4f}/{sol['ts']:.4f} = {alpha_calculated:.4f}")
-
-        # Compare with fixed setup cost
-        TC_fixed_setup = compute_TC_total(
-            sol['Q'], sol['P'], sol['n'], sol['k1'], Av0, sol['theta'],
-            params, sol['ts'], tT, sol['CR']
-        )
-        print(f"\n  TC with fixed setup cost (Av0):  ${TC_fixed_setup:.2f}")
-        print(f"  Cost reduction:                  ${TC_fixed_setup - sol['TC']:.2f}")
-        print(f"  Percentage reduction:            {100 * (TC_fixed_setup - sol['TC']) / TC_fixed_setup:.2f}%")
-
-        # Compare with fixed quality
-        TC_fixed_quality = compute_TC_total(
-            sol['Q'], sol['P'], sol['n'], sol['k1'], sol['Av'], theta0,
-            params, sol['ts'], tT, sol['CR']
-        )
-        print(f"\n  TC with fixed quality (θ0):      ${TC_fixed_quality:.2f}")
-        print(f"  Cost reduction:                  ${TC_fixed_quality - sol['TC']:.2f}")
-        print(f"  Percentage reduction:            {100 * (TC_fixed_quality - sol['TC']) / TC_fixed_quality:.2f}%")
+        print(f"  Expected Total Cost (ETC*):     ${sol['TC']:.2f}")
     else:
         print("\n⚠ No feasible solution found!")
-
-    print("\n" + "=" * 80)
