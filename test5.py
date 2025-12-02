@@ -1,7 +1,105 @@
 import math
 import numpy as np
+import pprint
+from typing import List, Dict
+from openpyxl import Workbook
+from openpyxl.utils import get_column_letter
+from openpyxl.styles import PatternFill
+from openpyxl.styles import Font, Alignment, PatternFill
 
 ## input ban đầu, tự thêm tùy tụi mày nhé
+class ExcelLogger:
+    def __init__(self, filename="paper_main_log.xlsx"):
+        self.filename = filename
+        self.wb = Workbook()
+        self.ws = self.wb.active
+        self.ws.title = "Log"
+
+        self.ws.append([
+            "n", "j",
+            "constraint_iter", "inner_iter",
+            "Q", "P", "k1", "Av", "theta",
+            "ts", "CR", "TC",
+            "dQ", "dP", "dk1", "dAv", "dtheta",
+            "LOG"
+        ])
+
+    def log(self,
+            n, j,
+            constraint_iter, inner_iter,
+            Q, P, k1, Av, theta,
+            ts, CR, TC,
+            dQ="", dP="", dk1="", dAv="", dtheta="",
+            log_msg=""):
+
+        self.ws.append([
+            n, j,
+            constraint_iter, inner_iter,
+            Q, P, k1, Av, theta,
+            ts, CR, TC,
+            dQ, dP, dk1, dAv, dtheta,
+            log_msg
+        ])
+
+    def save(self):
+        try:
+            self.format_header()
+            self.auto_adjust_column_width()
+            self.colorize_columns()
+            self.wb.save(self.filename)
+            print(f"Log: Excel saved to: {self.filename}")
+        except PermissionError:
+            print("Log: Không lưu được Excel ")
+
+
+    def auto_adjust_column_width(self):
+        for col in self.ws.columns:
+            max_length = 0
+            col_letter = get_column_letter(col[0].column)
+
+            for cell in col:
+                try:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+                except:
+                    pass
+
+            self.ws.column_dimensions[col_letter].width = max_length + 3
+
+    def colorize_columns(self):
+        colors = [
+            "9CC6DB",  # xanh nhạt
+            "FEEE91",  # vàng
+            "DDBA7D",  # cam nhạt
+            "F3E2D4",  # da
+            "92487A",  # tím đậm
+            "E49BA6",  # tím nhạt
+            "415E72",  # xanh đậm
+            "C5B0CD",  # khoai môn
+        ]
+
+        for col_idx in range(1, self.ws.max_column + 1):
+            color = colors[(col_idx - 1) % len(colors)]
+            fill = PatternFill(start_color=color, end_color=color, fill_type="solid")
+
+            for row_idx in range(1, self.ws.max_row + 1):
+                self.ws.cell(row=row_idx, column=col_idx).fill = fill
+
+    def format_header(self):
+        header_font = Font(bold=True, size=12)  #
+        header_align = Alignment(horizontal="center", vertical="center")
+        header_fill = PatternFill(
+            start_color="D9D9D9", end_color="D9D9D9", fill_type="solid"
+        )
+
+        for col in range(1, self.ws.max_column + 1):
+            cell = self.ws.cell(row=1, column=col)
+            cell.font = header_font
+            cell.alignment = header_align
+            cell.fill = header_fill
+
+
+        self.ws.row_dimensions[1].height = 25
 
 params = {
     "D": 600.0,
@@ -48,7 +146,7 @@ def compute_ts(a, b):
         if ts_min <= ts_j <= ts_max:
             ts_list.append(ts_j)
         else:
-            print(f"⚠️ Bỏ ts_j={ts_j} (ngoài [{ts_min}, {ts_max}])")
+            print(f"Log: Error Bỏ ts_j={ts_j} (ngoài [{ts_min}, {ts_max}])")
 
     return ts_list
 
@@ -72,7 +170,7 @@ def compute_CR(ts_list, a, b, C):
         # sum i = 1 .. min(j+1, m)  (chú ý: Python index = i-1)
         last_i = min(j + 1, m)
         term2 = 0.0
-        for i in range(1, last_i):  # i from 1 to j+1
+        for i in range(1, last_i+1):  # i from 1 to j+1
             idx = i - 1  # python index
             term2 += C[idx] * (a[idx] - b[idx])
 
@@ -154,7 +252,7 @@ def compute_TC_total(Q, P, n, k1, Av, theta, params, ts, tT, CR_ts):
 
 
 def daoham_Tcb_theoQ(Q, P, n, k1, ts, tT, CR_ts, params):
-    # địt con mẹ dài vãi lồn nên tách ra term 1 2 3 4 ,5,6 nhé
+
     D = params["D"]
     A0 = params["A0"]
     CT = params["CT"]
@@ -163,11 +261,11 @@ def daoham_Tcb_theoQ(Q, P, n, k1, ts, tT, CR_ts, params):
     pi = params["pi"]
 
     ts_safe = max(ts + Q / P, 1e-10)
-    # đạo hàm cái củ cặc D(A0+nCt)/nQ
+    # đạo hàm  D(A0+nCt)/nQ
     term1 = -((A0 + n * CT) * D) / (n * Q ** 2)
-    # đạo hàm cái củ cặc hb/2ksigma/2Psqrt(ts+Q/p
+    # đạo hàm  hb/2ksigma/2Psqrt(ts+Q/p
     term2 = (hb / 2) + (hb * k1 * sigma) / (2 * P * math.sqrt(ts_safe))
-    # đạo hàm cái củ cặc hb/2ksigma/2Psqrt(ts+Q/p
+    # đạo hàm
     term3_1 = (D * pi * sigma * (math.sqrt(1 + k1 ** 2) - k1)) / (4 * n * P * Q * math.sqrt(ts_safe))
     term3_2 = ((D * pi) / (n * Q ** 2)) * (sigma / 2) * (math.sqrt(ts_safe) * (math.sqrt(1 + k1 ** 2) - k1))
     term3 = term3_1 - term3_2
@@ -224,11 +322,11 @@ def b1(D, n, A0, CT, pi, sigma, ts, Q, P, tT, k1, CR, Av):
 
 
 def b2(D, pi, sigma, ts, Q, P, tT, k1, n):
-    ts_safe = ts + Q / P
+
     ts_safe = max(ts + Q / P, 1e-8)
 
     tT_safe = tT + k1 ** 2 * ts_safe
-    tT_safe = max(tT + k1 ** 2 * ts_safe, 1e-8)
+
 
     term1 = (math.sqrt(1 + k1 ** 2) - k1) / math.sqrt(ts_safe)
 
@@ -240,7 +338,7 @@ def b2(D, pi, sigma, ts, Q, P, tT, k1, n):
 
 def b3(hb, sigma, k1, ts, Q, P, hv, n, D, rho, theta):
     ts_safe = ts + Q / P
-    ts_safe = max(ts + Q / P, 1e-8)
+
 
     term1 = hb * (0.5 + (k1 * sigma) / (2 * P * math.sqrt(ts_safe)))
 
@@ -316,19 +414,32 @@ def daoham_Tc_theoP(P, b4_value, params):
 
 
 ## tính P* nè mấy con gà
-def giai_nghiem_daohamTc_theoP(b4, params):
+def giai_nghiem_daohamTc_theoP(b4, P_old, params, alpha=0.3, eps=1e-12):
+
+
     D = params["D"]
     xi1 = params["xi1"]
     Pmin = params["Pmin"]
     Pmax = params["Pmax"]
 
-    if b4 / (D * xi1) <= 0:
-        print("Log b4 / (D * xi1) =  ",b4 / (D * xi1) )
-        return Pmin
+    logs = []
 
-    P = math.sqrt(b4 / (D * xi1))
+    val = b4 / (D * xi1)
 
-    return P
+    if val <= 0 or not math.isfinite(val):
+        #  KHÔNG cho rơi về Pmin nữa
+        P_fp = P_old
+        logs.append(f"SKIP_P_B4_INVALID ({val:.3e})")
+    else:
+        P_fp = math.sqrt(val)
+
+
+    # RELAXATION (nới mềm)
+
+    P_relaxed = (1 - alpha) * P_old + alpha * P_fp
+
+
+    return P_relaxed, logs
 
 
 ## đạo hàm TC theo k1
@@ -374,7 +485,7 @@ def capnhat_k1_theo_congthuc(k1, Q, P, n, ts, tT, params):
     return k1_new
 
 
-##hàm này tìm k1* nè mấy thằng nhóc
+##hàm này tìm k1*
 
 def giai_nghiem_daohamTc_theoK1(Q, P, n, ts, tT, k1_old, params):
 
@@ -384,7 +495,7 @@ def giai_nghiem_daohamTc_theoK1(Q, P, n, ts, tT, k1_old, params):
     return k1
 
 
-##hàm này tính Av * nè mấy cu
+##hàm này tính Av *
 def giai_nghiem_daohamTc_theoAv(Q, n, params):
     D = params["D"]
     B2 = params["B2"]
@@ -398,210 +509,353 @@ def giai_nghiem_daohamTc_theoTheta(Q, n, params):
     D = params["D"]
     return 2 * B1 / (rho * n * D * Q)
 
+def ep_bien(Q, P, k1, Av, theta, params, eps=1e-8,alpha=0.39173):
+    logs = []
 
-if __name__ == "__main__":
+    # ---- Q ----
+    if Q < eps:
+        logs.append(f"CLIP_Q ({Q:.3e} -> {eps:.3e})")
+        Q = eps
 
-    print("\n========== PARAMS ==========")
-    for k, v in params.items():
-        print(f"{k:8s} = {v}")
-    print("============================\n")
+    # ---- P ----
+    Pmin, Pmax = params["Pmin"], params["Pmax"]
+    if P < Pmin:
+        P_old = P
+        P = Pmin + alpha * (Pmin - P_old)
+        logs.append(f"SOFT_CLIP_P_LOW ({P_old:.3e} -> {P:.3e})")
+
+    elif P > Pmax:
+        P_old = P
+        P = Pmax + alpha * (P_old - Pmax)
+        logs.append(f"SOFT_CLIP_P_HIGH ({P_old:.3e} -> {P:.3e})")
+
+    # ---- k1 ----
+    if k1 < eps:
+        logs.append(f"CLIP_k1 ({k1:.3e} -> {eps:.3e})")
+        k1 = eps
+
+
+    return Q, P, k1, Av, theta, logs
+
+
+
+
+# === MAIN: ===
+
+def paper_main(params: Dict, a: List[float], b: List[float], C: List[float],
+               max_n_search: int = 10,
+               max_inner_iter: int = 10,
+               max_constraint_iter: int = 10,
+               tol: float = 10):
+    logger = ExcelLogger("paper_debug.xlsx")
 
     # =========================
-    # STEP 1: INITIALIZATION
+    # STEP 1: compute ts_list, CR_list
     # =========================
-    n = 1
-    D = params["D"]
-    Pmin = params["Pmin"]
-    Pmax = params["Pmax"]
-    Av0 = params["Av0"]
-    theta0 = params["theta0"]
-    tT = params["tT"]
+    ts_list = compute_ts(a, b)
+    CR_list = compute_CR(ts_list, a, b, C)
 
-    # Sort theo crashing cost (QUAN TRỌNG)
-    zip_all = sorted(zip(a, b, C), key=lambda x: x[2])
-    a_sorted, b_sorted, C_sorted = map(list, zip(*zip_all))
+    print("STEP 1: ts_list =", ts_list)
+    print("STEP 1: CR_list =", CR_list)
 
-    ts_list = compute_ts(a_sorted, b_sorted)
-    CR_list = compute_CR(ts_list, a_sorted, b_sorted, C_sorted)
-    m = len(ts_list)
-
-    print("=" * 80)
-    print("STEP 1: INITIALIZATION")
-    print("=" * 80)
-    print(f"ts_list = {ts_list}")
-    print(f"CR_list = {CR_list}")
-    print(f"m = {m} components")
-
-    best_TC_overall = float("inf")
-    best_solution_overall = None
-
-    MAX_N = 15
+    all_solutions = []
     TC_prev_n = float("inf")
 
-    # =========================
-    # STEP 5 OUTER LOOP: n
-    # =========================
-    while n <= MAX_N:
+
+    # STEP 5: Outer loop on n
+
+    n = 1
+    while n <= max_n_search:
         print("\n" + "=" * 80)
-        print(f"STEP 5: TRYING n = {n}")
+        print(f"STEP 5: Trying n = {n}")
         print("=" * 80)
 
         TC_best_for_n = float("inf")
-        solution_best_for_n = None
+        best_solution_for_n = None
 
-        # =========================
-        # STEP 2: FOR EACH ts_j
-        # =========================
-        for j in range(1, m + 1):
-            ts = ts_list[j - 1]
-            CR = CR_list[j - 1]
 
-            print(f"\n{'─'*60}")
-            print(f"STEP 2: n = {n}, j = {j}/{m}")
-            print(f"ts = {ts:.4f}, CR = {CR:.4f}")
-            print(f"{'─'*60}")
+        # STEP 2: Loop over ts_j
 
-            # =========================
-            # STEP 2a: INITIAL VALUES
-            # =========================
+        for j_idx, ts in enumerate(ts_list, start=1):
+            CR_ts = CR_list[j_idx - 1]
+
+            print("\n" + "-" * 60)
+            print(f"STEP 2: n={n}, j={j_idx} | ts={ts:.6f}, CR={CR_ts:.6f}")
+            print("-" * 60)
+
+
+            # INITIALIZATION
+
             Q = 200.0
             P = 900.0
             k1 = 4.0
-            Av = Av0
-            theta = theta0
+            Av = params["Av0"]
+            theta = params["theta0"]
 
-            # =====================================
-            # 🔁 STEP 3 OUTER CONSTRAINT LOOP
-            # =====================================
-            MAX_CONSTRAINT_ITER = 50
+            lock_Av = False
+            lock_theta = False
             feasible = False
 
-            for constraint_iter in range(MAX_CONSTRAINT_ITER):
 
-                print(f"\n  ▶ Constraint iteration = {constraint_iter}")
+            # CONSTRAINT LOOP (paper STEP 3)
 
-                # =========================
-                # STEP 2b–2e: CONVERGENCE LOOP
-                # =========================
-                MAX_ITER = 50
-                tolerance = 1e-6
+            for constraint_iter in range(max_constraint_iter):
 
-                for iteration in range(MAX_ITER):
-                    Q_prev, P_prev, k1_prev = Q, P, k1
-                    Av_prev, theta_prev = Av, theta
+                converged = False
 
-                    # ---------- STEP 2b ----------
-                    beta4_val = b4(ts, Q, P, n, params["hv"], tT, k1, params)
-                    P = giai_nghiem_daohamTc_theoP(beta4_val, params)
 
-                    if P <= Pmin: P = Pmin
-                    if P >= Pmax: P = Pmax
+                # INNER FIXED-POINT LOOP (STEP 2b–2e)
+                # Giải nghiệm độc lập
 
-                    Q = giai_nghiem_daohamTc_theoQ(Q, P, n, Av, theta, ts, tT, k1, CR, params)
+                for iter_idx in range(max_inner_iter):
+                    Q_old, P_old, k1_old, Av_old, theta_old = Q, P, k1, Av, theta
+                    clip_logs = []
 
-                    # ---------- STEP 2c ----------
-                    k1 = giai_nghiem_daohamTc_theoK1(Q, P, n, ts, tT, k1, params)
 
-                    # ---------- STEP 2d ----------
-                    Av = giai_nghiem_daohamTc_theoAv(Q, n, params)
-                    theta = giai_nghiem_daohamTc_theoTheta(Q, n, params)
+                    # --- 1. Update P (độc lập) ---
+                    b4_val = b4(ts, Q_old, P_old, n, params["hv"], params["tT"], k1_old, params)
+                    P_new, P_logs = giai_nghiem_daohamTc_theoP(b4_val, P_old, params, alpha=0.25)
+                    clip_logs.extend(P_logs)
 
-                    # ---------- STEP 2e ----------
-                    if (
-                        abs(Q - Q_prev) < tolerance and
-                        abs(P - P_prev) < tolerance and
-                        abs(k1 - k1_prev) < tolerance and
-                        abs(Av - Av_prev) < tolerance and
-                        abs(theta - theta_prev) < tolerance
-                    ):
+                    # --- 2. Update Q (độc lập) ---
+                    Q_new = giai_nghiem_daohamTc_theoQ(
+                        Q_old, P_old, n, Av_old, theta_old,
+                        ts, params["tT"], k1_old, CR_ts, params
+                    )
+
+                    # --- 3. Update k1 (độc lập) ---
+                    k1_new = giai_nghiem_daohamTc_theoK1(
+                        Q_old, P_old, n, ts, params["tT"], k1_old, params
+                    )
+
+                    # --- 4. Update Av, theta (độc lập) ---
+                    if lock_Av:
+                        Av_new = Av
+                    else:
+                        Av_new = giai_nghiem_daohamTc_theoAv(Q_old, n, params)
+
+                    if lock_theta:
+                        theta_new = theta
+                    else:
+                        theta_new = giai_nghiem_daohamTc_theoTheta(Q_old, n, params)
+
+                    # UPDATE + Ép biên
+                    Q, P, k1, Av, theta,clip_logs = ep_bien(Q_new, P_new, k1_new, Av_new, theta_new,params)
+
+                    for msg in clip_logs:
+                        logger.log(
+                            n=n, j=j_idx,
+                            constraint_iter=constraint_iter + 1,
+                            inner_iter=iter_idx + 1,
+                            Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                            ts=ts, CR=CR_ts, TC="",
+                            log_msg=msg
+                        )
+
+                    TC_val_iter = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, params["tT"], CR_ts)
+
+
+                    # CHECK HỘI TỤ - Giải fixed point
+
+                    dQ = abs(Q - Q_old)
+                    dP = abs(P - P_old)
+                    dk1 = abs(k1 - k1_old)
+                    dAv = abs(Av - Av_old)
+                    dtheta = abs(theta - theta_old)
+
+
+
+                    logger.log(
+                        n=n, j=j_idx,
+                        constraint_iter=constraint_iter + 1,
+                        inner_iter=iter_idx + 1,
+                        Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                        ts=ts, CR=CR_ts, TC=TC_val_iter,
+                        dQ=dQ, dP=dP, dk1=dk1, dAv=dAv, dtheta=dtheta,
+                        log_msg="INNER_STEP"
+                    )
+
+                    if max(dQ, dP, dk1, dAv, dtheta) < tol:
+                        converged = True
+                        print(f"   Log: Inner converged at iter {iter_idx + 1}")
+                        logger.log(
+                            n=n, j=j_idx,
+                            constraint_iter=constraint_iter + 1,
+                            inner_iter=iter_idx + 1,
+                            Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                            ts=ts, CR=CR_ts, TC=TC_val_iter,
+                            dQ=dQ, dP=dP, dk1=dk1, dAv=dAv, dtheta=dtheta,
+                            log_msg="INNER_STEP"
+                        )
+
                         break
 
-                print(f"    Converged at iter {iteration+1}")
-                print(f"    Q={Q:.4f}, P={P:.4f}, k1={k1:.4f}, Av={Av:.6f}, θ={theta:.8f}")
+                if not converged:
+                    print("  Log:  Error: Inner loop NOT converged (paper vẫn cho đi tiếp)")
+
+                print(f"  Log:  After inner: Q={Q:.6f}, P={P:.6f}, k1={k1:.6f}, Av={Av:.6f}, theta={theta:.6e}")
 
                 # =========================
-                # STEP 3: CHECK CONSTRAINTS (ĐÚNG FLOWCHART)
+                # CHECK RÀNG BUỘC PAPER
                 # =========================
-                print(f"    CHECK: Av={Av:.6f} vs Av0={Av0:.6f}")
-                print(f"           θ={theta:.8f} vs θ0={theta0:.8f}")
+                Av_violate = Av > params["Av0"]
+                theta_violate = theta > params["theta0"]
 
-                # ✅ STEP 3a
-                if Av <= Av0 and theta <= theta0:
-                    print("    ✅ BOTH SATISFIED → GO TO STEP 4")
+                if (not Av_violate) and (not theta_violate):
                     feasible = True
+                    # log constraint ok (use last computed TC_val_iter)
+                    logger.log(
+                        n=n, j=j_idx,
+                        constraint_iter=constraint_iter + 1,
+                        inner_iter="",
+                        Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                        ts=ts, CR=CR_ts, TC=TC_val_iter,
+                        log_msg="CONSTRAINT_OK"
+                    )
+                    print("    Log: OK Constraints satisfied")
                     break
 
-                # ✅ STEP 3b
-                elif Av > Av0 and theta <= theta0:
-                    print("    ⚠ Av VIOLATED → SET Av = Av0 → GO BACK TO STEP 2")
-                    Av = Av0
-                    continue
+                if Av_violate:
+                    Av = params["Av0"]
+                    lock_Av = True
 
-                # ✅ STEP 3c
-                elif Av <= Av0 and theta > theta0:
-                    print("    ⚠ θ VIOLATED → SET θ = θ0 → GO BACK TO STEP 2")
-                    theta = theta0
-                    continue
+                    TC_post_reset = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, params["tT"], CR_ts)
+                    logger.log(
+                        n=n, j=j_idx,
+                        constraint_iter=constraint_iter + 1,
+                        inner_iter="",
+                        Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                        ts=ts, CR=CR_ts, TC=TC_post_reset,
+                        log_msg="RESET_Av"
+                    )
+                    print("   Log:Error:  Av violated → set Av = Av0")
 
-                # ✅ STEP 3d
-                else:
-                    print("    ⚠ BOTH VIOLATED → SET Av = Av0, θ = θ0 → GO BACK TO STEP 2")
-                    Av = Av0
-                    theta = theta0
-                    continue
+                if theta_violate:
+                    theta = params["theta0"]
+                    lock_theta = True  #
 
-            # Nếu không tìm được nghiệm hợp lệ
+                    TC_post_reset = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, params["tT"], CR_ts)
+                    logger.log(
+                        n=n, j=j_idx,
+                        constraint_iter=constraint_iter + 1,
+                        inner_iter="",
+                        Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                        ts=ts, CR=CR_ts, TC=TC_post_reset,
+                        log_msg="RESET_theta"
+                    )
+                    print("    Log:Error theta violated → set theta = theta0")
+
+            # =========================
+            # Nếu không feasible → bỏ j
+            # =========================
             if not feasible:
-                print("  ❌ DISCARD THIS j")
+                print("  Log: Error: Infeasible → discard j")
+                logger.log(
+                    n=n, j=j_idx,
+                    constraint_iter="", inner_iter="",
+                    Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                    ts=ts, CR=CR_ts, TC="",
+                    log_msg="DISCARD_j"
+                )
+
                 continue
 
-            # =========================
-            # STEP 4: COMPUTE TC
-            # =========================
-            TC_current = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, tT, CR)
 
-            print(f"\nSTEP 4: TC(n={n}, j={j}) = ${TC_current:.2f}")
+            # STEP 4: Compute TC
 
-            if TC_current < TC_best_for_n:
-                TC_best_for_n = TC_current
-                solution_best_for_n = {
-                    'n': n, 'j': j, 'Q': Q, 'P': P, 'k1': k1,
-                    'Av': Av, 'theta': theta, 'ts': ts, 'CR': CR,
-                    'TC': TC_current
+            TC_val = compute_TC_total(Q, P, n, k1, Av, theta, params, ts, params["tT"], CR_ts)
+
+            logger.log(
+                n=n,
+                j=j_idx,
+                constraint_iter=constraint_iter + 1,
+                inner_iter=iter_idx + 1,
+                Q=Q, P=P, k1=k1, Av=Av, theta=theta,
+                ts=ts, CR=CR_ts, TC=TC_val,
+                dQ=dQ, dP=dP, dk1=dk1, dAv=dAv, dtheta=dtheta,
+                log_msg="INNER_STEP"
+            )
+
+            print(f"  -> TC(n={n}, j={j_idx}) = {TC_val:.6f}")
+
+            if TC_val < TC_best_for_n:
+                TC_best_for_n = TC_val
+                best_solution_for_n = {
+                    "n": n,
+                    "j": j_idx,
+                    "Q": Q,
+                    "P": P,
+                    "k1": k1,
+                    "Av": Av,
+                    "theta": theta,
+                    "ts": ts,
+                    "CR": CR_ts,
+                    "TC": TC_val
                 }
 
-        # =========================
-        # STEP 5: COMPARE TC(n)
-        # =========================
-        print(f"\n{'='*80}")
-        print(f"STEP 5: TC_best(n={n}) = ${TC_best_for_n:.2f}")
-        print(f"        TC_previous = ${TC_prev_n:.2f}")
+
+        # STEP 5: So sánh TC theo n
+
+        print("\n" + "=" * 60)
+        print(f"BEST TC for n={n} = {TC_best_for_n}")
+        print(f"PREVIOUS TC (n-1) = {TC_prev_n}")
 
         if TC_best_for_n < TC_prev_n:
-            print("  ✅ TC IMPROVED → CONTINUE")
             TC_prev_n = TC_best_for_n
-            best_solution_overall = solution_best_for_n
+            all_solutions.append(best_solution_for_n)
             n += 1
+            logger.log(
+                n=n, j="",
+                constraint_iter="", inner_iter="",
+                Q="", P="", k1="", Av="", theta="",
+                ts="", CR="", TC="",
+                log_msg="STOP_BY_TC"
+            )
+
         else:
-            print("  ❌ TC INCREASED → STOP")
+            # Log stopping reason with current n (do NOT increment n)
+            logger.log(
+                n=n, j="",
+                constraint_iter="", inner_iter="",
+                Q="", P="", k1="", Av="", theta="",
+                ts="", CR="", TC="",
+                log_msg="STOP_BY_TC"
+            )
+            print("Log: Error: TC không giảm nữa → DỪNG đúng paper")
             break
 
-    # =========================
-    # STEP 6: FINAL SOLUTION
-    # =========================
-    print("\n" + "="*80)
-    print("STEP 6: FINAL OPTIMAL SOLUTION")
-    print("="*80)
 
-    if best_solution_overall:
-        sol = best_solution_overall
-        print(f"n* = {sol['n']}")
-        print(f"j* = {sol['j']}")
-        print(f"Q* = {sol['Q']:.4f}")
-        print(f"P* = {sol['P']:.4f}")
-        print(f"k1* = {sol['k1']:.4f}")
-        print(f"Av* = {sol['Av']:.6f}")
-        print(f"θ* = {sol['theta']:.8f}")
-        print(f"TC* = ${sol['TC']:.2f}")
+    # STEP 6: Lấy nghiệm tốt nhất
+
+    print("\n" + "=" * 80)
+    print("STEP 6: FINAL RESULT")
+    logger.save()
+
+    if all_solutions:
+        best_overall = min(all_solutions, key=lambda x: x["TC"])
+        pprint.pprint(best_overall, indent=2)
+        return best_overall, all_solutions
     else:
-        print("⚠ NO FEASIBLE SOLUTION")
+        print("Log:Error: Không có nghiệm feasible")
+        return None, all_solutions
+
+if __name__ == "__main__":
+    # Run the main routine
+    best_sol, all_sols = paper_main(params, a, b, C,
+                                    max_n_search=50,
+                                    max_inner_iter=200,
+                                    max_constraint_iter=200,
+                                    tol=1e-9)
+
+    if best_sol:
+        print("\nLOG: OK FINAL OPTIMUM")
+        print(f"n* = {best_sol['n']}")
+        print(f"j* = {best_sol['j']}")
+        print(f"Q* = {best_sol['Q']:.6f}")
+        print(f"P* = {best_sol['P']:.6f}")
+        print(f"k1* = {best_sol['k1']:.6f}")
+        print(f"Av* = {best_sol['Av']:.6f}")
+        print(f"theta* = {best_sol['theta']:.9e}")
+        print(f"TC* = {best_sol['TC']:.6f}")
+    else:
+        print("No feasible solution produced by algorithm.")

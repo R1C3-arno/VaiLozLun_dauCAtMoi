@@ -1,11 +1,8 @@
 # CHECKLIST HỎI GIẢNG VIÊN – KIỂM TRA THUẬT TOÁN & CODE
 
-## 📋 MỤC ĐÍCH
-Document này liệt kê các câu hỏi cần xác nhận với giảng viên để đảm bảo implementation đúng 100% theo paper "Impact of safety factors and setup time reduction in a two-echelon supply chain management" (Sarkar et al., 2018).
-
 ---
 
-## I. ✅ CÔNG THỨC TOÁN (CỰC KỲ QUAN TRỌNG)
+## I. CÔNG THỨC TOÁN (CỰC KỲ QUAN TRỌNG)
 
 ### 1. Công thức tính tập t_{s,j}
 
